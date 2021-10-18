@@ -1,0 +1,50 @@
+         DOCKER COMPOSE PARA POSTGRESQL Y PGADMIN
+
+Fuente: https://www.youtube.com/watch?v=uKlRp6CqpDg
+
+En un Docker compose siempre se empieza por la version de la sintaxis y despues en la zona services puedo crear tantos como quiera.En este ejemplo creamos dos(los nombres pueden ser cualquiera):
+
+version: "3.8"
+
+services:
+  postgres:
+  pgadmin:
+
+* Como puedo ver este archivo será una composición de dos servicios/imagenes que las he llamado postgres y pgadmin,pero lo importante no es éste nombre custom sino la propiedad image,ya que determina la imagen que usará ese service(fijate como puedo usar : para concatenar una version):
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14 <- version 14
+
+* Al final quedará asi(fijate que salgo por el 5433 del host)
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14
+    restart: always
+    ports: 
+      - "5433:5432"
+    environment:
+      - DATABASE_HOST=127.0.0.1
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=root
+
+  pgadmin:
+    image: dpage/pgadmin4:6
+    environment:
+      - PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      - PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "80:80"
+    depends_on:
+      - postgres
+
+
+Cuando me conecte a la interfaz me querré conectar a una DB,ojo que el hostname ya no es localhost sino postgres(o el nombre del servicio).El port se refiere al del contenedor,asi que será 5432(fijate que tengo en 5433 el gestor).
+Como username y password serán los valores de las env,en este caso root.Ya puedo abrir la interfaz Web en el puerto que especifiqué,en este caso localhost:80.Cuidado con tener algun Nginx o Apache corriendo. 
+Por último puedo cambiar el tema a oscuro en Preferences/Miscellaneous/Themes/Config     
