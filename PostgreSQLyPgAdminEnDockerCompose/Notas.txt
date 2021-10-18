@@ -33,18 +33,23 @@ services:
       - POSTGRES_USER=root
       - POSTGRES_PASSWORD=root
       - POSTGRES_DB=root
+    volumes:
+      - pgvolume:/home/oscar/Escritorio/BoundedVolumes/PgVolume
 
   pgadmin:
     image: dpage/pgadmin4:6
     environment:
-      - PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
-      - PGADMIN_DEFAULT_PASSWORD: "admin"
+      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
     ports:
-      - "80:80"
+      - "8:80"
     depends_on:
       - postgres
 
+volumes:
+  pgvolume:      
 
+* Recuerda crear un volumen para persistir los datos y darle un nombre apropiado(investigar esto).
 Cuando me conecte a la interfaz me querré conectar a una DB,ojo que el hostname ya no es localhost sino postgres(o el nombre del servicio).El port se refiere al del contenedor,asi que será 5432(fijate que tengo en 5433 el gestor).
 Como username y password serán los valores de las env,en este caso root.Ya puedo abrir la interfaz Web en el puerto que especifiqué,en este caso localhost:80.Cuidado con tener algun Nginx o Apache corriendo. 
 Por último puedo cambiar el tema a oscuro en Preferences/Miscellaneous/Themes/Config     
