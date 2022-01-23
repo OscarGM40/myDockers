@@ -1,0 +1,431 @@
+			HOSTING A WORDPRESS WITH MYSQL AND SSL WITH CERBOT
+
+Source: https://zactyh.medium.com/hosting-wordpress-in-docker-with-ssl-2020-fa9391881f3
+
+                PASOS
+
+UNO: la primera vez ejecutar el yaml del primer paso(sin el certbot,solo el mysql,el wordpress y el ngind) y con la primera configuracion para nginx.
+
+DOS:Tras conseguir un dominio con los nameservers apuntando a los DNS del servidor donde tenga este codigo  añadir el cerbot(el cuarto servicio),descomentando la linea del comando y levantarlo mientras la anterior ejecución sigue en pie asi:
+>docker-compose up --no-deps certbot (--no-deps para que solo se levante el cerbot y no reinicie a los demas)
+
+IMPORTANTE: este comando debe ejecutarse mientras se esta ejecutando lo anterior bajo http.Una vez salga exitoso lo comento,pues sólo lo necesito una vez para generar los .pem exitosamente
+
+TRES:una vez se genere todo correcto cambio el primer nginx.conf por el completo,el que tiene también https y los certificados SSL y levanto el servicio(el nginx) sin molestar a los demas servicios de la misma forma:
+>docker-compose up -d --force-recreate --no-deps webserver
+Como puedo ver apenas son un par de pasos.
+
+                      TEORIA
+
+Combinar docker y Wordpress me da la flexibilidad de mover el Wordpress de mi cliente a cualquier lado rápidamente y tener una manera fácil de rotarlo a otro servidor o VPS
+
+En este tutorial el autor me guiará hacia un full hosted Wordpress con su base de datos,un NGINX server y un SSL con cerbot en un docker-compose.
+
+				1-INITIAL SETUP
+
+Vamos a tratar de replicar la estructura de archivos de Wordpress.Se recomienda subir el proyecto a GitHub.Empecemos!
+
+En la raiz del proyecto empiezo creando el docker-compose.yaml:
+
+version: '3'
+
+services:
+  db:
+    image: mysql:8.0
+	#debo renombrar cada servicio/contenedor
+	container_name: db
+	restart: unless-stopped
+	#si uso mysql8 necesito este comando para que PHP maneje las pass correctamente
+	command: '--default-authentication-plugin=mysql_native_password'
+
+  wordpress:
+    image: wordpress:5-fpm-alpine
+	#wordpress debe esperar a la conexíon con la base de datos
+	depends_on:
+	  - db
+	container_name: wordpress
+	restart: unless-stopped
+  webserver:
+  #nginx necesita que wordpress arranque primero
+    depends_on:
+	  - wordpress
+	image: nginx:1.15.2-alpine
+	container_name: webserver
+	restart: unless-stopped
+	#abre los puertos del nginx,sino no veré nada!
+	ports:
+	  - "80:80"
+	  - "443:443"
+
+Esto es el setup básico.Lo siguiente será añadir las variables de entorno.
+
+			3-ENVIRONMENTAL VARIABLES
+
+Hay muchas formas de hacer esto,pero para mantener el docker-compose seguro mientras está en el repo,referenciaremos un .env y usaremos sus valores como variables:
+#Asegurate que ignoras el .env en el .gitignore!:
+
+#our .env
+MYSQL_ROOT_PASSWORD=root_password
+MYSQL_USER=wordpress
+MYSQL_PASSWORD=wordpress_password
+
+Bastante auto-explicativo.Nuestro servicio/contenedor MySQL necesita los datos iniciales para el usuario root y un usuario con el cual el Wordpress se logeará.Ahora pasemos las variables al docker-compose:
+
+version: '3'
+services:
+  db:
+    image: mysql:8.0
+	container_name: db
+	restart: unless-stopped
+	command: '--default-authentication-plugin=mysql_native_password'
+	#asegurate de añadir el path al .env!
+	env_file: .env
+	environment:
+	  - MYSQL_DATABASE=wordpress
+  wordpress:
+    image: wordpress:5-fpm-alpine
+	depends_on:
+	  - db
+	container_name: wordpress
+	restart: unless-stopped
+	#asegurate de añadir el path al .env
+	env_file: .env
+    #referenciamos las keys con $key y se infiere el valor!
+	environment:
+	  - WORDPRESS_DB_HOST=db:3306
+	  - WORDPRESS_DB_USER=$MYSQL_USER 
+	  - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+	  - WORDPRESS_DB_NAME=wordpress
+  webserver:
+    depends_on:
+	  - wordpress
+	image: nginx:1.15.12-alpine
+	container_name: webserver
+	restart: unless-stopped
+	ports: 
+	  - "80:80"
+	  - "443:443"
+
+	4- MOUNTING VOLUMES
+
+Con nuestros archivos de temas custom,necesitamos moverlos al sitio correcto en los archivos de nuestra instancia de Wordpress.Los temas son almacenados en el directorio /var/www/html/wp-content/themes,asi que queremos moverlos alli.También vamos a añadir nuestra configuración inicial HTTP para el nginx para tener nuestro Wordpress hosteado(esto es requerido para el cerbot y la Secure Socker Layer).Si tienes un directorio plugins para añadir,añade otra línea pero reemplazando themes con plugins.
+
+  wordpress:
+    image: wordpress:5-fpm-alpine
+	depends_on:
+	  - db
+	container_name: wordpress
+	restart: unless-stopped
+	volumes:
+	  #vamos a guardar la data del WP en nuestro sistema de ficheros(en la máquina que hostee este Docker)
+	  - wordpress:/var/www/html
+	  #vamos a poner nuestros temas en los temas del contenedor
+	  -/path/to/repo/myTheme/:/var/www/html/wp-content/themes/myTheme
+	env_file: .env
+	environment:
+	  - WORDPRESS_DB_HOST=db:3306
+	  - WORDPRESS_DB_USER=$MYSQL_USER 
+	  - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+	  - WORDPRESS_DB_NAME=wordpress
+	  
+Y también vamos a crear un volumen para la base de datos para que pueda persistir todo en nuestro sistema:
+
+  db:
+    image: mysql:8.0
+	container_name: db
+	restart: unless-stopped
+	command: '--default-authentication-plugin=mysql_native_password'
+	env_file: .env
+	environment:
+	  - MYSQL_DATABASE=wordpress
+	#vamos a guardar la base de datos en el hosteador de Docker
+	volumes:
+	  - dbdata:/var/lib/mysql
+
+Y vamos a crear la configuración HTTP y montarla en el nginx:
+#en la raiz del repo creo: nginx-conf/nginx.conf
+server {
+  listen 80;
+  listen [::]:80;
+
+  #add your domain name(s)
+  server_name dominio.com www.dominio.com
+
+  index index.php index.html index.htm;
+
+  #montaremos el volumen a este root path para que sea servido
+  root /var/www/html;
+
+  #esto es para la capa de certificación de cerbot
+  location ~ /.well-known/acme-challenge {
+		allow all;
+		root /var/www/html;
+  }
+
+  location ~ \.php$ {
+      try_files $uri = 404;
+	  fastcgi_split_path_info ^(.+\.php)(/.+)$;
+
+	  #proxy  pass al container name y puerto
+	  # no hemos expuesto el puerto 9000 del wordpress pero él aún lo expone entre contenedores
+	  fastcgi_pass wordpress:9000;
+
+	  fastcgi_index index.php;
+	  include fastcgi_params;
+      fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+      fastcgi_param PATH_INFO $fastcgi_path_info;
+  }
+   location ~ /\.ht {
+       deny all;
+    }
+   location = /favicon.ico { 
+        log_not_found off; access_log off; 
+    }
+   location = /robots.txt { 
+       log_not_found off; access_log off; allow all; 
+  }
+   location ~* \.(css|gif|ico|jpeg|jpg|js|png)$ {
+         expires max;
+         log_not_found off;
+				  }
+    }
+
+Y montamos este volumen de configuracion en el nginx:
+
+  webserver:
+    depends_on:
+	  - wordpress
+	image: nginx:1.15.12-alpine
+	container_name: webserver
+	restart: unless-stopped
+	ports:
+	  - "80:80"
+	  - "443:443"
+	volumes:
+	#también montamos el wordpress en el directorio html para servirlo
+	  - wordpress:/var/www/html
+	#necesitamos añadir el archivo de configuración
+	  - /path/to/folder/nginx-conf/:etc/nginx/conf.d #simplemente hacer un volume binding a la carpeta anterior y la del nginx
+
+Todo lo que quedaría sería añadir los volumenes anónimos al final del docker-compose:
+volumes:
+  wordpress:
+  dbdata:
+
+**Con esto ya los crea
+Adelante,ya puedes probarlo!:
+>>docker-compose up -d<- antes crea el dominio y lo metes al nginx.conf(he creado wordpressinstantaneo.tk)
+
+5- GETTING SSL CERTIFICATE 
+
+Para obtener un certificado Secure Socker Layer debo asegurarme que tengo un par de cosas antes:
+1-debo tener un dominio público en un servicio DNS
+2-Debe tener los nameservers puestos correctamente
+3-Tu dominio apunta al servidor en el que estas corriendo este Wordpress con Docker(tienes un record A apuntando a la IP del servidor).
+
+Si tengo esto,ya puedo proceder.Necesito añadir Cerbot como un servicio/contenedor al docker-compose y despues realizar tres pasos más:
+1-Mientras Nginx está corriendo la configuración HTTP,ejecutamos un comando Cerbot para obtener el certificado.
+2-Cambiamos la configuración Nginx por una configuración HTTPS
+3-Reiniciamos el contenedor Nginx:
+
+Empecemos por crear este servicio:
+
+webserver:
+  depends_on:
+    - wordpress
+  image: nginx:1.15.12-alpine
+  container_name: webserver
+  restart: unless-stopped
+  ports:
+    - "80:80"
+	- "443:443"
+  volumes:
+    - wordpress:/var/www/html
+	- path/to/nginx-conf-folder/:/etc/nginx/conf.d
+	#nginx necesitará los archivos de certificación que cree cerbot
+	- cerbotdata:/etc/letsencrypt
+  networks:
+    - app-network
+
+certbot:
+  depends_on:
+    - webserver
+  image: cerbot/certbot
+  container_name: cerbot
+  volumes:
+  #guardamos nuestro directorio de llaves en el servidor host
+    - certbotdata:/var/www/html
+  # este comando generará el certificado
+  #asegurate de cambiar las flags -d y --email 
+  command: certonly --webroot --webroot-path=/var/www/html --email youremail@email.com --agree-tos --no-eff-email --force-renewal -d domain.com -d www.domain.com
+
+#añade el volumen certbotdata
+volumes:
+  wordpress:
+  dbdata:
+  certbotdata:
+
+Perfecto,ahora ejecutamos el contenedor Certbot para obtener el certificado:
+>docker-compose up --no-deps certbot <-fijate como en un compose puede arrancar un servicio en vez de todos,aparte de poder hacer muchas más cosas
+
+Flags insteresantes:
+ --no-deps                  Don't start linked services(entiendo que es que ya estaban arrancados,por eso la usa).
+--force-recreate           Recreate containers even if their configuration
+                               and image haven't changed.
+ -V, --renew-anon-volumes   Recreate anonymous volumes instead of retrieving
+                               data from the previous containers.
+Trata de usar -V en este ejemplo  para aprender más sobre la flag.
+
+Si veo un 'Congratulations' en los logs diciendo que se crearon satisfactoriamente los certificados,puedo seguir adelante.Si falla,asegurate que Nginx está corriendo que los ajustes DNS están correctos.Y chequea el comando cerbot en el docker-compose.yaml.
+
+Fijate que el certificado y la key irán siempre a /etc/letsencrypt/live/domain.com/*.pem:
+Certificate is saved at: /etc/letsencrypt/live/wordpressinstantaneo.tk/fullchain.pem
+certbot      | Key is saved at:         /etc/letsencrypt/live/wordpressinstantaneo.tk/privkey.pem <- ojo que es sin www
+Sólo habrá que cambiar el dominio.
+Nota:porque sólo son 3 meses de validez?Se renueva sólo con el --force-renewal?
+
+Ahora tenemos que cambiar la configuración del Nginx para que corra SSL.Editamos nuestro nginx-conf/nginx.conf de la raiz del proyecto:
+
+# nginx-conf/nginx.conf 
+# redirect to HTTPS ( la redirección es opcional )
+server {
+  listen 80;
+  listen [::]:80;
+  
+  server_name domain.com www.domain.com
+  
+  location ~ /.well-known/acme-challenge {
+          allow all;
+          root /var/www/html;
+  }
+  
+  location / {
+          rewrite ^ https://$host$request_uri? permanent;
+  }
+}
+
+server {
+  listen 443 ssl http2;
+  listen [::]:443 ssl http2;
+
+  server_name domain.com www.domain.com;
+
+  index index.php index.html index.htm;
+
+  root /var/www/html;
+
+  server_tokens off;
+
+  # add our paths for the certificates Certbot created 
+  ssl_certificate /etc/letsencrypt/live/domain.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/www.domain.com/privkey.pem; sin www
+  # some security headers ( optional )
+  add_header X-Frame-Options "SAMEORIGIN" always;
+  add_header X-XSS-Protection "1; mode=block" always;
+  add_header X-Content-Type-Options "nosniff" always;
+  add_header Referrer-Policy "no-referrer-when-downgrade" always;
+  add_header Content-Security-Policy "default-src * data: 'unsafe-eval' 'unsafe-inline'" always;
+
+  location / {
+          try_files $uri $uri/ /index.php$is_args$args;
+  }
+
+  location ~ \.php$ {
+          try_files $uri =404;
+          fastcgi_split_path_info ^(.+\.php)(/.+)$;
+          fastcgi_pass wordpress:9000;
+          fastcgi_index index.php;
+          include fastcgi_params;
+          fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+          fastcgi_param PATH_INFO $fastcgi_path_info;
+  }
+
+  location ~ /\.ht {
+          deny all;
+  }
+  location = /favicon.ico { 
+          log_not_found off; access_log off; 
+  }
+  location = /favicon.svg { 
+          log_not_found off; access_log off; 
+  }
+  location = /robots.txt { 
+          log_not_found off; access_log off; allow all; 
+  }
+  location ~* \.(css|gif|ico|jpeg|jpg|js|png)$ {
+          expires max;
+          log_not_found off;
+  }
+}
+
+Ahora reinicio Nginx para que la nueva configuración SSL pueda tomar efecto:
+>docker-compose up -d --force-recreate --no-deps webserver
+
+Y para prevenir el spam de los limites de Renovación,comento el comando en el servicio Cerbot que usé antes:
+
+# comment out with '#'
+# command: certonly --webroot --webroot-path=/var/www/html --email youremail@email.com --agree-tos --no-eff-email --force-renewal -d                                      domain.com -d www.domain.com
+
+Fijate que lo he aplicado una única vez
+
+6- CONCLUSION
+Ya he terminado.Este Wordpress está totalmente hosteado con SLL y Docker!.Ha sido bastante,pero ya está en producción.Aquí esta el docker-compose.yaml entero:
+version: '3'
+services:
+  db:
+    image: mysql:8.0
+    container_name: db
+    restart: unless-stopped
+    command: '--default-authentication-plugin=mysql_native_password'
+    env_file: .env
+    environment:
+      - MYSQL_DATABASE=wordpress
+    volumes: 
+      - dbdata:/var/lib/mysql
+  wordpress:
+    image: wordpress:5-fpm-alpine
+    depends_on:
+      - db
+    container_name: wordpress
+    restart: unless-stopped
+    volumes:
+      - wordpress:/var/www/html
+      - /path/to/repo/myTheme/:/var/www/html/wp-content/themes/myTheme
+    env_file: .env
+    environment:
+      - WORDPRESS_DB_HOST=db:3306
+      - WORDPRESS_DB_USER=$MYSQL_USER
+      - WORDPRESS_DB_PASSWORD=$MYSQL_PASSWORD
+      - WORDPRESS_DB_NAME=wordpress
+  webserver:
+    depends_on:
+      - wordpress
+    image: nginx:1.15.12-alpine
+    container_name: webserver
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - wordpress:/var/www/html
+      - /path/to/nginx-conf-folder/:/etc/nginx/conf.d
+      - certbotdata:/etc/letsencrypt
+    networks:
+      - app-network
+  certbot:
+    depends_on:
+      - webserver
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - certbotdata:/etc/letsencrypt
+      - wordpress:/var/www/html
+    command: certonly --webroot --webroot-path=/var/www/html --email youremail@email.com --agree-tos --no-eff-email --force-renewal -d domain.com -d www.domain.com
+volumes:
+  wordpress:
+  dbdata:
+  certbotdata:
+
+
+
+

@@ -1,0 +1,62 @@
+// ============================== //
+        // MODO DE USO //
+
+RESUMEN: creará una base de datos mysql en el puerto 3307(para que no choque con una nativa en el 3306) y un phpmyadmin en localhost:82(visitar en el navegador localhost:82).
+Para acceder a mysql usar: mysql -u root -p root -P 3307 -h 0.0.0.0
+Para acceder a phpmyadmin usar: http://localhost:82/phpmyadmin/ y usar el usuario root y la contraseña root
+Adicionalmente creará un volumen(carpeta) en el Sistema Operativo Host persistiendo la Base de datos
+
+Arrancar el contenedor: docker-compose up -d(ubicarse en la carpeta con el .yaml)
+Parar el contenedor: docker-compose stop
+Remover el contenedor y su volumen: docker-compose down -v
+// ============================== //
+
+
+NOTAS: Crear una composición de MySQL e interfaz Gráfica no es nada complicado.Fijate que le he pasado root tanto a la password del user normal como al root user que se crea por defecto.Los users serán root y user.Esto debería cambiarse en un proyecto real por una password más fuerte.
+El volumen dbdata debo dejarlo como está.El otro volumen custom puedo cambiarlo,y debo cambiarlo si es necesario(al final lo he removido,no usaré binded volumes)
+Fijate que en la primera zona de volumenes(donde es un array) no puedo poner espacios(pues es un único valor volumeName:innerRoute)
+Diria que estoy linkando ese volumen pero no existía esa carpeta(tengo que crearlo con external:true??)
+
+version: '3.8'
+ 
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysqldb
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: root
+      #MYSQL_USER: user <- parece que da error
+      #MYSQL_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+      - mysqlvolume:/home/oscar/Escritorio/BoundedVolumes/MySQLVolume
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmin
+    links:
+      - mysql
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_ARBITRARY: 1
+    depends_on:  
+      - mysql
+    ports:
+      - 80:80
+volumes:
+  dbdata:
+  mysqlvolume:
+
+Fijate que desde la version 3.4 puedo usar variables de entorno.Hay que crear un .env a la altura del yaml:
+VOLUME_ID=my_volume_001
+Despues en el yaml lo llamo  con ${} <- como Javascript
+volumes:
+  myvol:
+    name: ${VOLUME_ID}
+
+Para referenciar un volumen externo hay que usar external:true(aqui estoy usando uno interno).Un volumen externo debió haber sido creado con docker volume create <name> y simplemente lo referenciaría.
+Si el volumen no existe lo puede crear Docker,pero no hay que pasarle external:true para que sea interno y sepa que ha de crearlo.

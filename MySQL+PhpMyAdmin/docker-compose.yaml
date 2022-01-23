@@ -14,11 +14,11 @@ services:
       - "3307:3306"
     volumes:
       - dbdata:/var/lib/mysql
-      - mysqlvolume:/home/oscar/Escritorio/BoundedVolumes/MySQLVolume
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
     container_name: phpmyadmin
+    restart: always
     links:
       - mysql
     environment:
@@ -28,8 +28,7 @@ services:
     depends_on: 
       - mysql
     ports:
-      - 80:80
+      - 82:80
 
 volumes:
   dbdata:
-  mysqlvolume:

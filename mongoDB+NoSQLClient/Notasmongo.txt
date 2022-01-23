@@ -1,0 +1,17 @@
+IMPORTANTE: levantar con docker-compose up -d | parar con docker-compose stop(esto no elimina las imagenes).Para eliminar usar docker-compose down.
+Recuerda que un contenedor siempre está consumiendo algo de RAM,siempre es mejor pararlo.
+
+Para entrar por CLI (mongo <dbname> -u <username> --host <host> --port <port>)Lamentablemente parece que tengo que buscar el adaptador de red con docker-inspect <container_id>(buscarlo con docker-compose ps).
+>>mongo admin -uroot --host 172.25.0.1 --port 27018 (la pass es root)
+
+
+El cliente gráfico sale por localhost:83 en un navegador.
+Una vez dentro hay que conectarse a alguna conexión existente.
+Para ello hay que pasarle la cadena de conexión asi:
+mongodb://172.22.0.1:27018/admin <- admin siempre va a estar(ojo que la ip puede cambiar)
+También en autenticacion usar modelo SHA-1 y poner el user y pass.
+
+En cuanto a la IP donde saldrá el container hay que hacer docker inspect <mongodbContainerIdentifier> y coger la interfaz:
+ "Gateway": "172.22.0.1", <- coger la del Gateway
+ "IPAddress": "172.22.0.2",
+Estas Ips son de rango privado,sólo visibles en la LAN a la que pertenezca el equipo

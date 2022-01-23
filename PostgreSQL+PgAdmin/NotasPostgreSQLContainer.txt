@@ -1,0 +1,71 @@
+// ============================== //
+        // MODO DE USO //
+
+RESUMEN: En el 5433 del Sistema Operativo anfitrión estará el contenedor con el PostgreSQL.En localhost:81 está el PgAdmin.
+Para acceder por CLI: psql root root -h 0.0.0.0 -p 5433 (dbname, usuario, host, puerto)
+Pedirá la pass: La pass es root también
+Para acceder a PgAdmin usar email(admin@admin.com) y pass(admin).
+Despues dar en CreateServer y  el hostname ya no es localhost sino postgres(o el nombre del servicio).El port se refiere al del contenedor,asi que será 5432.
+Como username y password serán los valores de las env,en este caso root ambas. 
+Por último puedo cambiar el tema a oscuro en Preferences/Miscellaneous/Themes/Config 
+
+Arrancar el contenedor: docker-compose up -d(ubicarse en la carpeta con el .yaml)
+Parar el contenedor: docker-compose stop
+Remover el contenedor y su volumen: docker-compose down -v
+// ============================== //
+
+
+Fuente: https://www.youtube.com/watch?v=uKlRp6CqpDg
+
+En un Docker compose siempre se empieza por la version de la sintaxis y despues en la zona services puedo crear tantos como quiera.En este ejemplo creamos dos(los nombres pueden ser cualquiera):
+
+version: "3.8"
+
+services:
+  postgres:
+  pgadmin:
+
+* Como puedo ver este archivo será una composición de dos servicios/imagenes que las he llamado postgres y pgadmin,pero lo importante no es éste nombre custom sino la propiedad image,ya que determina la imagen que usará ese service(fijate como puedo usar : para concatenar una version):
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14 <- version 14
+    container_name: postgres14
+
+* Fijate que la propiedad container_name es opcional,si no la pongo se creará el contenedor con nombre de la imagen,pero es mejor darle un nombre más apropiado:
+
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:14
+    restart: always
+    ports: 
+      - "5433:5432"
+    environment:
+      - DATABASE_HOST=127.0.0.1
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=root
+    volumes:
+      - pgvolume:/home/oscar/Escritorio/BoundedVolumes/PgVolume <- debe existir
+
+  pgadmin:
+    image: dpage/pgadmin4:6
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "admin@admin.com"
+      PGADMIN_DEFAULT_PASSWORD: "admin"
+    ports:
+      - "81:80"
+    depends_on:
+      - postgres
+
+volumes:
+  pgvolume:      
+
+* Recuerda crear un volumen para persistir los datos y darle un nombre apropiado(investigar esto).
+Cuando me conecte a la interfaz PgAdmin me querré conectar a una DB,ojo que el hostname ya no es localhost sino postgres(o el nombre del servicio).El port se refiere al del contenedor,asi que será 5432(fijate que tengo en 5433 el gestor).
+Como username y password serán los valores de las env,en este caso root.Ya puedo abrir la interfaz Web en el puerto que especifiqué,en este caso localhost:81.Cuidado con tener algun Nginx o Apache corriendo. 
+Por último puedo cambiar el tema a oscuro en Preferences/Miscellaneous/Themes/Config     
