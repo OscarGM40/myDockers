@@ -5,7 +5,7 @@ RESUMEN: En el 5433 del Sistema Operativo anfitrión estará el contenedor con e
 Para acceder por CLI: psql root root -h 0.0.0.0 -p 5433 (dbname, usuario, host, puerto)
 Pedirá la pass: La pass es root también
 Para acceder a PgAdmin usar email(admin@admin.com) y pass(admin).
-Despues dar en CreateServer y  el hostname ya no es localhost sino postgres(o el nombre del servicio).El port se refiere al del contenedor,asi que será 5432.
+Despues dar en CreateServer y  el hostname ya no es localhost sino postgres(o el nombre del servicio en el archivo yaml para la imagen postgres).El port se refiere al del contenedor,asi que será 5432.
 Como username y password serán los valores de las env,en este caso root ambas. 
 Por último puedo cambiar el tema a oscuro en Preferences/Miscellaneous/Themes/Config 
 

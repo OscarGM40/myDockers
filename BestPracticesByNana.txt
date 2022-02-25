@@ -1,0 +1,59 @@
+				TOP 8 BEST PRACTICES FOR USING DOCKER IN PRODUCTION
+
+Source: https://www.youtube.com/watch?v=8vXoMqWgbQQ&ab_channel=TechWorldwithNana
+
+CONSEJO UNO: nunca usar una imagen de un SO e instalarle lo que quiera en ella(como un Node o un NginxJ).Esto va a funcionar,si,pero va a ocupar más y las imagenes de SOs enteros son muy susceptibles a vulnerabilidades
+
+CONSEJO DOS: nunca usar o requerir una imagen con FROM sin taggearla.Usar FROM node es como usar FROM node:latest trayendo una imagen diferente y eventualmente,pudiendo romper la aplicación
+FROM node:17.0.1 ✓
+
+CONSEJO TRES: siempre usar la imagen que pida menos espacio.Las imagenes 'alpine' estan optimizadas para Docker,asi que usar FROM node:17.0.1-alpine es la mejor opción posible)
+Alpine es una lightweight Linux distro security-oriented,obviamente esto deja claro que es la mejor opción.
+
+CONSEJO CUATRO: optimizar las capas de la caché de la imagen.Dado que Docker va a cachear cada linea de un Dockerfile y crear una capa temporal el orden es muy importante(error muy común):
+
+FROM node:17.0.1-alpine
+WORKDIR /app
+COPY myapp /app <- esto es un error de asintos
+RUN npm install --production <- pues cada cambio va a reejecutar el npm i
+CMD ["node","src/index.js"]
+Este error es muy común,ya que en cuanto una capa cambia,todas las siguientes se van a ejecutar,asi que en este ejemplo cada minimo cambio dispara un npm i.
+
+La solución es no copiar todo en un paso:
+COPY package*.json ./
+RUN npm install
+COPY myapp /app 
+De esta forma cualquier cambio no disparará el npm excepto si es en el package.json que además es justo lo que quiero.
+Siempre debo ordenar los comandos del que menos cambia al que más frecuentemente cambia.
+
+CONSEJO CINCO: crear un .dockerignore con todo lo que quiero excluir:
+.git
+.cache
+.private.key 
+...etc
+Recuerda que Docker está en Go y usará su sintaxis
+
+CONSEJO SEIS: usar Builds Multi-Stage.Este tipo de builds me permite crear varias imagenes durante el proceso de build,pero solo dejar la última imagen como la que voy a entregar al usuario.Ejemplo(fijate en la necesidad de usar AS <name>):
+
+#Build stage
+FROM maven AS build
+WORKDIR /app
+COPY myapp /app
+RUN mvn package
+#Run stage
+FROM tomcat
+COPY --from=build /app/target/file.war /usr/local/tomcat/
+
+En este tipo de builds renombrar una stage es muy común y también referenciarla con --from=<name>.Fijate que no tiene nada que ver una MultiStage Build con un docker-compose
+NOTA:sólo los últimos comandos de un Dockerfile crearán la imagen,los pasos previos sólo serán imagenes temporales que se descartan.
+
+CONSEJO SIETE: por defecto,cuando no especifique un USER a Docker,Docker va a usar el user root o admin,el más elevado.En la práctica hay muy pocos casos en los que se necesite permiso de superusuario y es una mala práctica de seguridad,pues un hacker podría entrar por el contenedor al host.
+
+Siempre debo crear un usuario y grupo dedicados en la imagen:
+RUN groupadd -r tom && useradd -g tom tom
+RUN chown -R tom:tom /app
+USER tom
+CMD ["node","index.js"]
+
+CONSEJO OCHO: escanear las imagenes buscando vulnerabilidades
+Este paso es importante.Puedo usar el comando docker scan <image> para escanear imagenes(requiere estar logeado en DockerHub)
